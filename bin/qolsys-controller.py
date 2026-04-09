@@ -25,6 +25,10 @@ class ControllerConfig:
     auto_discover_pki: bool
     pairing_resume: bool
     mqtt_bridge: bool
+    mqtt_bridge_allow_anonymous: bool
+    mqtt_bridge_username: str
+    mqtt_bridge_password: str
+    mqtt_bridge_allowed_users: dict[str, str]
     start_pairing: bool
     check_user_code_on_arm: bool
     check_user_code_on_disarm: bool
@@ -45,6 +49,9 @@ def _detect_local_ip() -> str:
 def load_config(path: str) -> ControllerConfig:
     with open(path, "r", encoding="utf-8") as handle:
         raw = json.load(handle)
+        raw_mqtt_bridge_allowed_users = raw.get("mqtt_bridge_allowed_users", {})
+        if not isinstance(raw_mqtt_bridge_allowed_users, dict):
+            raw_mqtt_bridge_allowed_users = {}
 
         return ControllerConfig(
             panel_ip=raw["panel_ip"],
@@ -59,6 +66,14 @@ def load_config(path: str) -> ControllerConfig:
             check_user_code_on_disarm=bool(raw.get("check_user_code_on_disarm", False)),
             log_mqtt_messages=bool(raw.get("log_mqtt_messages", False)),
             mqtt_bridge=bool(raw.get("mqtt_bridge", False)),
+            mqtt_bridge_allow_anonymous=bool(raw.get("mqtt_bridge_allow_anonymous", False)),
+            mqtt_bridge_username=str(raw.get("mqtt_bridge_username", "")),
+            mqtt_bridge_password=str(raw.get("mqtt_bridge_password", "")),
+            mqtt_bridge_allowed_users={
+                str(username): str(password)
+                for username, password in raw_mqtt_bridge_allowed_users.items()
+                if isinstance(username, str) and isinstance(password, str)
+            },
         )
 
 
@@ -83,6 +98,10 @@ class QolsysController:
         settings.check_user_code_on_disarm = self.config.check_user_code_on_disarm
         settings.pairing_resume = self.config.pairing_resume
         settings._mqtt_bridge_enabled = self.config.mqtt_bridge
+        settings._mqtt_bridge_allow_anonymous = self.config.mqtt_bridge_allow_anonymous
+        settings._mqtt_bridge_username = self.config.mqtt_bridge_username
+        settings._mqtt_bridge_password = self.config.mqtt_bridge_password
+        settings._mqtt_bridge_allowed_users = self.config.mqtt_bridge_allowed_users
 
         configured = await self.controller.config(start_pairing=self.config.start_pairing)
         if not configured:
