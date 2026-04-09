@@ -237,7 +237,7 @@ class QolsysPKI:
                 if leaf_cert.issuer == ca_cert.subject:
                     signature_hash_algorithm = leaf_cert.signature_hash_algorithm
                     if signature_hash_algorithm is None:
-                        raise ValueError('Missing signature hash algorithm')
+                        raise ValueError("Missing signature hash algorithm")
                     cast(RSAPublicKey, ca_cert.public_key()).verify(
                         leaf_cert.signature,
                         leaf_cert.tbs_certificate_bytes,
