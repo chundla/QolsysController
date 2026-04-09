@@ -45,7 +45,9 @@ class QolsysSettings:
         self._mqtt_bridge_port: int = 8883
         self._mqtt_bridge_http_port: int = 9123
         self._mqtt_bridge_max_connections: int = 5
-        self._mqtt_bridge_allow_anonymous: bool = True
+        self._mqtt_bridge_allow_anonymous: bool = False
+        self._mqtt_bridge_username: str = ""
+        self._mqtt_bridge_password: str = ""
         self._mqtt_bridge_allowed_users: dict[str, str] = {}
         self._mqtt_bridge_root_topic: str = "qolsys_panel"
         self._mqtt_bridge_friendly_name: str = "home"
@@ -98,6 +100,14 @@ class QolsysSettings:
     @property
     def mqtt_bridge_allow_anonymous(self) -> bool:
         return self._mqtt_bridge_allow_anonymous
+
+    @property
+    def mqtt_bridge_username(self) -> str:
+        return self._mqtt_bridge_username
+
+    @property
+    def mqtt_bridge_password(self) -> str:
+        return self._mqtt_bridge_password
 
     @property
     def mqtt_bridge_allowed_users(self) -> dict[str, str]:
