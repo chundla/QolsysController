@@ -248,8 +248,47 @@ class MqttBridgeClient:
         for autdev in self._bridge._controller.state.automation_devices:
             autdev.register(QolsysNotification.AUTOMATION_UPDATE, self.handle_event)
 
+        self._bridge._controller.state.register(QolsysNotification.ZONE_ADD, self._register_zone)
+        self._bridge._controller.state.register(QolsysNotification.PARTITION_ADD, self._register_partition)
+        self._bridge._controller.state.register(QolsysNotification.AUTOMATION_ADD, self._register_automation_device)
         self._bridge._controller.state.register(QolsysNotification.PANEL_STATUS_UPDATE, self.handle_event)
         self._bridge._controller.state.register(QolsysNotification.PANEL_SETTINGS_UPDATE, self.handle_event)
+
+    def _register_zone(self, event: Event) -> None:
+        zone_id = event.data.get("id")
+        if zone_id is None:
+            return
+
+        zone = self._bridge._controller.state.zone(str(zone_id))
+        if zone is None:
+            return
+
+        zone.register(QolsysNotification.ZONE_UPDATE, self.handle_event)
+        self.handle_event(Event(QolsysNotification.ZONE_UPDATE, zone, zone.to_dict_event()))
+
+    def _register_partition(self, event: Event) -> None:
+        partition_id = event.data.get("id")
+        if partition_id is None:
+            return
+
+        partition = self._bridge._controller.state.partition(str(partition_id))
+        if partition is None:
+            return
+
+        partition.register(QolsysNotification.PARTITION_UPDATE, self.handle_event)
+        self.handle_event(Event(QolsysNotification.PARTITION_UPDATE, partition, partition.to_dict_event()))
+
+    def _register_automation_device(self, event: Event) -> None:
+        virtual_node_id = event.data.get("id")
+        if virtual_node_id is None:
+            return
+
+        autdev = self._bridge._controller.state.automation_device(str(virtual_node_id))
+        if autdev is None:
+            return
+
+        autdev.register(QolsysNotification.AUTOMATION_UPDATE, self.handle_event)
+        self.handle_event(Event(QolsysNotification.AUTOMATION_UPDATE, autdev, autdev.to_dict_event()))
 
     async def _handle_automation_command(self, payload: str) -> None:
         # Decode JSON
