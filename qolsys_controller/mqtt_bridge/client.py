@@ -68,9 +68,7 @@ class MqttBridgeClient:
 
             try:
                 tls_context = ssl.create_default_context()
-                tls_context.load_verify_locations(
-                    cafile=str(self._bridge._controller._pki.mqtt_bridge_ca_cer_file_path)
-                )
+                tls_context.load_verify_locations(cafile=str(self._bridge._controller._pki.mqtt_bridge_ca_cer_file_path))
                 tls_context.check_hostname = False
                 tls_context.verify_mode = ssl.CERT_REQUIRED
 

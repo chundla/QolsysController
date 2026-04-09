@@ -230,12 +230,8 @@ class QolsysPKI:
         pair_valid = False
         if ca_cer_exists and leaf_cer_exists and ca_key_exists:
             try:
-                ca_cert = x509.load_pem_x509_certificate(
-                    await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes)
-                )
-                leaf_cert = x509.load_pem_x509_certificate(
-                    await asyncio.to_thread(self.mqtt_bridge_cer_file_path.read_bytes)
-                )
+                ca_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes))
+                leaf_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_cer_file_path.read_bytes))
                 if leaf_cert.issuer == ca_cert.subject:
                     ca_cert.public_key().verify(
                         leaf_cert.signature,
