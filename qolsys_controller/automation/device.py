@@ -1,7 +1,7 @@
 import logging
 from abc import ABC
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any, cast
 
 from qolsys_controller.automation.protocol_service import ServiceProtocol
 from qolsys_controller.automation.service import AutomationService
@@ -75,7 +75,7 @@ class QolsysAutomationDevice(QolsysObservable, ABC):
         self._smart_energy_optimizer: str = dev_dict.get("smart_energy_optimizer", "")
         self._linked_security_zone: str = dev_dict.get("linked_security_zone", "")
 
-        self._available_services: list[Type[Any]] = [
+        self._available_services: list[type[Any]] = [
             BatteryService,
             CoverService,
             LightService,
@@ -122,14 +122,14 @@ class QolsysAutomationDevice(QolsysObservable, ABC):
     def info(self) -> None:
         pass
 
-    def service_get(self, service_type: type[AutomationService], endpoint: int = 0) -> AutomationService | None:
+    def service_get(self, service_type: type[Any], endpoint: int = 0) -> AutomationService | None:
         services_list = self._services.get(endpoint, [])
         for service in services_list:
             if isinstance(service, service_type):
-                return service
+                return cast(AutomationService, service)
         return None
 
-    def service_get_protocol(self, service_type: type[AutomationService]) -> list[AutomationService]:
+    def service_get_protocol(self, service_type: type[Any]) -> list[AutomationService]:
         services: list[AutomationService] = []
 
         for endpoint, services_list in self._services.items():

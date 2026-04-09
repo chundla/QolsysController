@@ -11,7 +11,7 @@ import ssl
 import sys
 from dataclasses import dataclass
 
-from qolsys_controller import qolsys_controller
+from qolsys_controller.controller import QolsysController as QolsysControllerImpl
 from qolsys_controller.errors import QolsysMqttError, QolsysSqlError, QolsysSslError
 
 
@@ -39,7 +39,7 @@ def _detect_local_ip() -> str:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
+        ip: str = sock.getsockname()[0]
         sock.close()
         return ip
     except Exception:
@@ -81,7 +81,7 @@ class QolsysController:
     def __init__(self, config: ControllerConfig, log: logging.Logger) -> None:
         self.config = config
         self.log = log
-        self.controller = qolsys_controller()
+        self.controller = QolsysControllerImpl()
 
     async def start(self) -> None:
         os.makedirs(self.config.config_dir, exist_ok=True)
