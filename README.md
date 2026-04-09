@@ -33,6 +33,12 @@ Supported GET endpoints:
 - `/health`, returns bridge health plus `connected`, `paired`, and `ca_ready`
 - `/mqtt-bridge/ca`, returns the generated CA certificate when available
 
+Example CA bootstrap:
+
+```bash
+curl --fail http://127.0.0.1:9123/mqtt-bridge/ca -o mqtt_bridge_ca.cer
+```
+
 This HTTP surface is used for CA bootstrap and health checks, not for panel command traffic.
 
 ## Functionality Highlights
@@ -89,11 +95,26 @@ python3.12 qolsys-controller --verbose --config 'path_to_config_file'
   "check_user_code_on_arm": false,
   "check_user_code_on_disarm": false,
   "log_mqtt_messages": false,
-  "mqtt_bridge": true
+  "mqtt_bridge": true,
+  "mqtt_bridge_allow_anonymous": false,
+  "mqtt_bridge_username": "bridge",
+  "mqtt_bridge_password": "change-this-password",
+  "mqtt_bridge_allowed_users": {
+    "homeassistant": "another-strong-password"
+  }
 }
 ```
 
 The MQTT bridge publishes under `qolsys_panel/v1/home/...` by default and starts automatically when `mqtt_bridge` is true.
+
+### MQTT Bridge Security Defaults
+
+- Anonymous MQTT access is now disabled by default.
+- Configure either:
+  - `mqtt_bridge_username` + `mqtt_bridge_password`, and/or
+  - `mqtt_bridge_allowed_users` (map of username to password).
+- Anonymous access is only enabled when `mqtt_bridge_allow_anonymous` is explicitly set to `true`.
+- The bridge HTTP API binds to `127.0.0.1` and is intended for local CA bootstrap and health checks.
 
 ## ⚠️ Certificate Warning
 
