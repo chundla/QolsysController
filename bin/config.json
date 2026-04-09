@@ -10,5 +10,11 @@
   "check_user_code_on_disarm": false,
   "log_mqtt_messages": false,
   "pairing_resume": true,
-  "mqtt_bridge": true
+  "mqtt_bridge": true,
+  "mqtt_bridge_allow_anonymous": false,
+  "mqtt_bridge_username": "bridge",
+  "mqtt_bridge_password": "change-this-password",
+  "mqtt_bridge_allowed_users": {
+    "homeassistant": "another-strong-password"
+  }
 }
