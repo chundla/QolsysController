@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import hmac
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -21,16 +22,30 @@ if TYPE_CHECKING:
 class AuthPlugin(BaseAuthPlugin):  # type: ignore[misc]
     def set_config(self, config: dict[str, Any]) -> None:
         super().set_config(config)
-        self.allowed_users = config.get("allowed_users", {})
+        raw_allowed_users = config.get("allowed_users", {})
+        if not isinstance(raw_allowed_users, dict):
+            self.allowed_users = {}
+            return
 
-    async def authenticate(self, username: str, password: str, **kwargs: Any) -> bool:
-        if username == "admin" and password == "secret":
-            return True
-        return False
+        self.allowed_users = {
+            str(username): str(password)
+            for username, password in raw_allowed_users.items()
+            if isinstance(username, str) and isinstance(password, str) and username and password
+        }
+
+    async def authenticate(self, username: str | None, password: str | None, **kwargs: Any) -> bool:
+        if not username or not password:
+            return False
+
+        expected_password = self.allowed_users.get(username)
+        if expected_password is None:
+            return False
+
+        return hmac.compare_digest(password, expected_password)
 
     @dataclass
     class Config:
-        allowed_users: dict[str, Any] = field(default_factory=dict)
+        allowed_users: dict[str, str] = field(default_factory=dict)
 
 
 class MqttBridgeBroker:
@@ -145,10 +160,6 @@ class MqttBridgeBroker:
         return broker
 
     def _build_config(self) -> dict[str, Any]:
-        # "cafile": "cert.pem",
-        # "certfile": "cert.pem",
-        # "keyfile": "key.pem",
-
         listeners = {
             "default": {
                 "type": "tcp",
@@ -160,17 +171,40 @@ class MqttBridgeBroker:
             }
         }
 
-        # Plugin selection
         plugins: dict[str, dict[str, Any]] = {}
 
         if self._controller.settings.mqtt_bridge_allow_anonymous:
+            LOGGER.warning("MQTT Bridge Broker: Anonymous MQTT access enabled")
             plugins["amqtt.plugins.authentication.AnonymousAuthPlugin"] = {"allow_anonymous": True}
         else:
+            allowed_users = self._build_allowed_users()
+            if not allowed_users:
+                raise ValueError(
+                    "MQTT bridge authentication is enabled but no users were configured. "
+                    "Set mqtt_bridge_username/mqtt_bridge_password, mqtt_bridge_allowed_users, "
+                    "or explicitly set mqtt_bridge_allow_anonymous=true."
+                )
+
             plugins["qolsys_controller.mqtt_bridge.broker.AuthPlugin"] = {
-                "allowed_users": self._controller.settings.mqtt_bridge_allowed_users
+                "allowed_users": allowed_users,
             }
 
         return {"listeners": listeners, "plugins": plugins}
+
+    def _build_allowed_users(self) -> dict[str, str]:
+        allowed_users = {
+            username: password
+            for username, password in self._controller.settings.mqtt_bridge_allowed_users.items()
+            if isinstance(username, str) and isinstance(password, str) and username and password
+        }
+
+        username = self._controller.settings.mqtt_bridge_username.strip()
+        password = self._controller.settings.mqtt_bridge_password
+
+        if username and password:
+            allowed_users[username] = password
+
+        return allowed_users
 
     async def shutdown(self) -> None:
         LOGGER.info("MQTT Bridge Broker: Shutting down ...")
