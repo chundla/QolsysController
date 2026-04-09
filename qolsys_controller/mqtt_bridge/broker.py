@@ -37,7 +37,7 @@ class MqttBridgeBroker:
     def __init__(self, controller: "QolsysController") -> None:
         self._controller = controller
         self._config: dict[str, Any] = self._build_config()
-        self._broker: Broker = self._create_broker()
+        self._broker: Broker | None = None
         self._is_running: bool = False
         self._broker_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
@@ -83,6 +83,8 @@ class MqttBridgeBroker:
     async def _run(self, startup_event: asyncio.Event, startup_result: dict[str, bool | Exception]) -> None:
         try:
             await self._check_or_create_certificates()
+            if self._broker is None:
+                self._broker = self._create_broker()
             await self._broker.start()
             await self.wait_for_broker_start()
 
@@ -111,10 +113,11 @@ class MqttBridgeBroker:
                 startup_event.set()
 
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(self._broker.shutdown()),
-                    timeout=5,
-                )
+                if self._broker is not None:
+                    await asyncio.wait_for(
+                        asyncio.shield(self._broker.shutdown()),
+                        timeout=5,
+                    )
 
             except asyncio.TimeoutError:
                 LOGGER.warning("MQTT Bridge Broker: Shutdown timed out")
@@ -123,6 +126,9 @@ class MqttBridgeBroker:
                 LOGGER.debug("MQTT Bridge Broker: Error during shutdown: %s", err)
 
     async def wait_for_broker_start(self, timeout: int = 5) -> None:
+        if self._broker is None:
+            raise RuntimeError("MQTT Bridge Broker is not initialized")
+
         start_time = asyncio.get_event_loop().time()
         while self._broker.transitions.state != "started":
             if asyncio.get_event_loop().time() - start_time > timeout:
@@ -131,12 +137,8 @@ class MqttBridgeBroker:
         LOGGER.info("MQTT Bridge Broker: Running")
 
     async def _check_or_create_certificates(self) -> None:
-        if (
-            not await self._controller._pki.check_mqtt_bridge_key_file()
-            or not await self._controller._pki.check_mqtt_bridge_cer_file()
-        ):
-            LOGGER.debug("MQTT Bridge Broker: Certificates not found, creating new certificates")
-            await self._controller._pki.create_mqtt_bridge_certificates()
+        LOGGER.debug("MQTT Bridge Broker: Validating certificates")
+        await self._controller._pki.create_mqtt_bridge_certificates()
 
     def _create_broker(self) -> Broker:
         broker = Broker(self._config)

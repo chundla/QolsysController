@@ -1,6 +1,9 @@
-## Qolsys MQTT Server Commands
+## Qolsys Panel MQTT Server Commands
+
+This file documents the panel-local MQTT protocol, not the controller bridge topic layout.
+
 ### MQTT Messages 
-#### PanelEvent Topic
+#### PanelEvent topic
 ##### `EVENT ZONE_EVENT`
 `ZONE_DELETE`
 ```json

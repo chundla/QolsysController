@@ -9,7 +9,7 @@ A Python module that emulates a virtual IQ Remote device, enabling full **local 
 - 🔐 Pairs by only using **Installer Code** (same procedure as standard IQ Remote pairing)
 - 🔢 Supports **4-digit user codes**
 - ⚠️ Uses a **custom local usercode database** — panel's internal user code verification process is not yet supported 
-- 🌐 Now includes a built-in MQTT broker (**MQTT Bridge**), enabling seamless publishing of panel updates and handling of incoming commands
+- 🌐 Includes a built-in MQTT bridge/broker for panel updates and incoming commands
 
 ## Functionality Highlights
 
@@ -68,6 +68,8 @@ python3.12 qolsys-controller --verbose --config 'path_to_config_file'
   "mqtt_bridge": true
 }
 ```
+
+The MQTT bridge publishes under `qolsys_panel/v1/home/...` by default and starts automatically when `mqtt_bridge` is true.
 
 ## ⚠️ Certificate Warning
 

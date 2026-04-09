@@ -146,6 +146,9 @@ class MqttBridgeClient:
                 if message.topic.matches(self._bridge.partition_command_topic):
                     await self._handle_partition_command(message.payload.decode(errors="ignore"))
 
+                if message.topic.matches(f"{self._bridge.panel_topic}/command"):
+                    await self._handle_panel_command(message.payload.decode(errors="ignore"))
+
         except aiomqtt.MqttError as err:
             if self._stop_event.is_set():
                 return
@@ -261,8 +264,6 @@ class MqttBridgeClient:
         command: str = data.get("command")
         virtual_node_id: int = data.get("virtual_node_id")
         endpoint: int = data.get("endpoint")
-        command_id: str = data.get("command_id")
-        response_topic: str = data.get("response_topic")
 
         if command not in valid_commands:
             LOGGER.error("MQTT Bridge Client: Invalid command for automation device: %s", command)
@@ -330,8 +331,8 @@ class MqttBridgeClient:
             return
 
         if command == "lock":
-            service = automation_device.service_get(LightService, endpoint)
-            if not isinstance(service, type(LockService)):
+            service = automation_device.service_get(LockService, endpoint)
+            if not isinstance(service, LockService):
                 LOGGER.error(
                     "MQTT Bridge Client: LockService not found for virtual_node_id: %s, endpoint: %s",
                     virtual_node_id,
@@ -349,8 +350,8 @@ class MqttBridgeClient:
             return
 
         if command == "unlock":
-            service = automation_device.service_get(LightService, endpoint)
-            if not isinstance(service, type(LockService)):
+            service = automation_device.service_get(LockService, endpoint)
+            if not isinstance(service, LockService):
                 LOGGER.error(
                     "MQTT Bridge Client: LockService not found for virtual_node_id: %s, endpoint: %s",
                     virtual_node_id,
@@ -369,7 +370,7 @@ class MqttBridgeClient:
 
         if command == "cover_open":
             service = automation_device.service_get(CoverService, endpoint)
-            if not isinstance(service, type(CoverService)):
+            if not isinstance(service, CoverService):
                 LOGGER.error(
                     "MQTT Bridge Client: CoverService not found for virtual_node_id: %s, endpoint: %s",
                     virtual_node_id,
@@ -388,7 +389,7 @@ class MqttBridgeClient:
 
         if command == "cover_close":
             service = automation_device.service_get(CoverService, endpoint)
-            if not isinstance(service, type(CoverService)):
+            if not isinstance(service, CoverService):
                 LOGGER.error(
                     "MQTT Bridge Client: CoverService not found for virtual_node_id: %s, endpoint: %s",
                     virtual_node_id,
@@ -637,12 +638,9 @@ class MqttBridgeClient:
         exit_sounds: bool = data.get("exit_sounds", True)
         instant_arm: bool = data.get("instant_arm", False)
         silent_disarm: bool = data.get("silent_disarm", False)
-        command_id: str = data.get("command_id")
-        response_topic: str = data.get("response_topic")
 
         valid_commands = [x.name for x in PartitionArmingType]
         valid_commands.append("DISARM")
-        LOGGER.error(valid_commands)
         if command not in valid_commands:
             LOGGER.error("MQTT Bridge Client: Invalid command for partition command: %s", command)
             return
@@ -663,3 +661,56 @@ class MqttBridgeClient:
                 exit_sounds,
                 instant_arm,
             )
+
+    async def _handle_panel_command(self, payload: str) -> None:
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            LOGGER.error("MQTT Bridge Client: Invalid JSON payload: %s", payload)
+            return
+
+        command: str = data.get("command")
+
+        if command == "execute_scene":
+            scene_id = data.get("scene_id")
+            if scene_id is None:
+                LOGGER.error("MQTT Bridge Client: Missing scene_id in panel command payload")
+                return
+            await self._bridge._controller.command_panel_execute_scene(str(scene_id))
+            return
+
+        if command == "trigger_police":
+            partition_id = data.get("partition_id")
+            if partition_id is None:
+                LOGGER.error("MQTT Bridge Client: Missing partition_id in panel command payload")
+                return
+            silent = bool(data.get("silent", False))
+            await self._bridge._controller.command_panel_trigger_police(str(partition_id), silent)
+            return
+
+        if command == "trigger_auxilliary":
+            partition_id = data.get("partition_id")
+            if partition_id is None:
+                LOGGER.error("MQTT Bridge Client: Missing partition_id in panel command payload")
+                return
+            silent = bool(data.get("silent", False))
+            await self._bridge._controller.command_panel_trigger_auxilliary(str(partition_id), silent)
+            return
+
+        if command == "trigger_fire":
+            partition_id = data.get("partition_id")
+            if partition_id is None:
+                LOGGER.error("MQTT Bridge Client: Missing partition_id in panel command payload")
+                return
+            await self._bridge._controller.command_panel_trigger_fire(str(partition_id))
+            return
+
+        if command == "speak":
+            text = data.get("text")
+            if not text:
+                LOGGER.error("MQTT Bridge Client: Missing text in panel command payload")
+                return
+            await self._bridge._controller.command_panel_speak(str(text))
+            return
+
+        LOGGER.error("MQTT Bridge Client: Invalid command for panel command: %s", command)

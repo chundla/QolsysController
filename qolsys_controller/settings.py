@@ -43,6 +43,7 @@ class QolsysSettings:
         # MQTT BRIDGE
         self._mqtt_bridge_enabled: bool = True
         self._mqtt_bridge_port: int = 8883
+        self._mqtt_bridge_http_port: int = 9123
         self._mqtt_bridge_max_connections: int = 5
         self._mqtt_bridge_allow_anonymous: bool = True
         self._mqtt_bridge_allowed_users: dict[str, str] = {}
@@ -85,6 +86,10 @@ class QolsysSettings:
     @property
     def mqtt_bridge_port(self) -> int:
         return self._mqtt_bridge_port
+
+    @property
+    def mqtt_bridge_http_port(self) -> int:
+        return self._mqtt_bridge_http_port
 
     @property
     def mqtt_bridge_max_connections(self) -> int:

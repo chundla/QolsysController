@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import logging
 import os
 import re
@@ -9,7 +10,8 @@ import aiofiles
 import aiofiles.os
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.exceptions import InvalidSignature
 from cryptography.x509.oid import NameOID
 
 from .settings import QolsysSettings
@@ -169,6 +171,20 @@ class QolsysPKI:
         LOGGER.debug("MQTT Brige Broker: No KEY File")
         return False
 
+    async def check_mqtt_bridge_ca_cer_file(self) -> bool:
+        if await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.exists):
+            LOGGER.debug("MQTT Bridge Broker: Found CA CER")
+            return True
+        LOGGER.debug("MQTT Bridge Broker: No CA CER File")
+        return False
+
+    async def check_mqtt_bridge_ca_key_file(self) -> bool:
+        if await asyncio.to_thread(self.mqtt_bridge_ca_key_file_path.exists):
+            LOGGER.debug("MQTT Bridge Broker: Found CA KEY")
+            return True
+        LOGGER.debug("MQTT Bridge Broker: No CA KEY File")
+        return False
+
     @property
     def key_file_path(self) -> Path:
         return self._subkeys_directory.joinpath(self.id + ".key")
@@ -190,6 +206,14 @@ class QolsysPKI:
         return self._subkeys_directory.joinpath(self.id + ".qolsys")
 
     @property
+    def mqtt_bridge_ca_cer_file_path(self) -> Path:
+        return self._settings.mqtt_bridge_directory.joinpath("mqtt_bridge_ca.cer")
+
+    @property
+    def mqtt_bridge_ca_key_file_path(self) -> Path:
+        return self._settings.mqtt_bridge_directory.joinpath("mqtt_bridge_ca.key")
+
+    @property
     def mqtt_bridge_cer_file_path(self) -> Path:
         return self._settings.mqtt_bridge_directory.joinpath(self._settings._mqtt_bridge_cerfile)
 
@@ -198,61 +222,134 @@ class QolsysPKI:
         return self._settings.mqtt_bridge_directory.joinpath(self._settings._mqtt_bridge_keyfile)
 
     async def create_mqtt_bridge_certificates(self) -> bool:
-        # Check for MQTT Bridge Broker certificate and key file colision
-        if await self.check_mqtt_bridge_cer_file() or await self.check_mqtt_bridge_key_file():
-            LOGGER.error("MQTT Bridge Broker: Certificate or Key File Colision")
-            return False
+        ca_key_exists = await self.check_mqtt_bridge_ca_key_file()
+        ca_cer_exists = await self.check_mqtt_bridge_ca_cer_file()
+        leaf_key_exists = await self.check_mqtt_bridge_key_file()
+        leaf_cer_exists = await self.check_mqtt_bridge_cer_file()
 
-        LOGGER.debug("MQTT Bridge Broker: Creating KEY")
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=self._settings.key_size)
-        private_pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-        async with aiofiles.open(self.mqtt_bridge_key_file_path, "wb") as f:
-            await f.write(private_pem)
+        pair_valid = False
+        if ca_cer_exists and leaf_cer_exists and ca_key_exists:
+            try:
+                ca_cert = x509.load_pem_x509_certificate(
+                    await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes)
+                )
+                leaf_cert = x509.load_pem_x509_certificate(
+                    await asyncio.to_thread(self.mqtt_bridge_cer_file_path.read_bytes)
+                )
+                if leaf_cert.issuer == ca_cert.subject:
+                    ca_cert.public_key().verify(
+                        leaf_cert.signature,
+                        leaf_cert.tbs_certificate_bytes,
+                        padding.PKCS1v15(),
+                        leaf_cert.signature_hash_algorithm,
+                    )
+                    pair_valid = True
+                else:
+                    LOGGER.debug("MQTT Bridge Broker: Existing leaf issuer does not match CA subject")
+            except (InvalidSignature, ValueError, TypeError, OSError) as err:
+                LOGGER.debug("MQTT Bridge Broker: Existing MQTT bridge cert pair is invalid: %s", err)
 
-        LOGGER.debug("MQTT Bridge Broker: Creating CER")
-        subject = issuer = x509.Name(
-            [
-                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "US"),
-                x509.NameAttribute(NameOID.LOCALITY_NAME, "US"),
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Qolsys Controller"),
-                x509.NameAttribute(NameOID.COMMON_NAME, "MQTT Bridge Broker"),
-            ]
-        )
-        cert = (
-            x509.CertificateBuilder()
-            .subject_name(
-                subject,
-            )
-            .issuer_name(
-                issuer,
-            )
-            .public_key(
-                private_key.public_key(),
-            )
-            .serial_number(
-                x509.random_serial_number(),
-            )
-            .not_valid_before(
-                datetime.now(timezone.utc),  # noqa: UP017
-            )
-            .not_valid_after(
-                datetime.now(timezone.utc) + timedelta(days=3650),  # noqa: UP017
-            )
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True,
-            )
-            .sign(private_key, hashes.SHA256())
-        )
-        cert_pem = cert.public_bytes(encoding=serialization.Encoding.PEM)
+        recreate_ca = not ca_key_exists or not ca_cer_exists or not pair_valid
+        recreate_leaf = not leaf_key_exists or not leaf_cer_exists or not pair_valid
 
-        async with aiofiles.open(self.mqtt_bridge_cer_file_path, "wb") as f:
-            await f.write(cert_pem)
+        if recreate_ca:
+            LOGGER.debug("MQTT Bridge Broker: Creating CA KEY")
+            ca_private_key = rsa.generate_private_key(public_exponent=65537, key_size=self._settings.key_size)
+            ca_private_pem = ca_private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+            async with aiofiles.open(self.mqtt_bridge_ca_key_file_path, "wb") as f:
+                await f.write(ca_private_pem)
+
+            LOGGER.debug("MQTT Bridge Broker: Creating CA CER")
+            ca_subject = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "US"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, "US"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Qolsys Controller"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, "Qolsys MQTT Bridge CA"),
+                ]
+            )
+            ca_cert = (
+                x509.CertificateBuilder()
+                .subject_name(ca_subject)
+                .issuer_name(ca_subject)
+                .public_key(ca_private_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(datetime.now(timezone.utc))
+                .not_valid_after(datetime.now(timezone.utc) + timedelta(days=3650))
+                .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+                .add_extension(
+                    x509.KeyUsage(
+                        digital_signature=False,
+                        content_commitment=False,
+                        key_encipherment=False,
+                        data_encipherment=False,
+                        key_agreement=False,
+                        key_cert_sign=True,
+                        crl_sign=True,
+                        encipher_only=False,
+                        decipher_only=False,
+                    ),
+                    critical=True,
+                )
+                .sign(ca_private_key, hashes.SHA256())
+            )
+            ca_cert_pem = ca_cert.public_bytes(encoding=serialization.Encoding.PEM)
+            async with aiofiles.open(self.mqtt_bridge_ca_cer_file_path, "wb") as f:
+                await f.write(ca_cert_pem)
+        else:
+            ca_private_key = serialization.load_pem_private_key(
+                await asyncio.to_thread(self.mqtt_bridge_ca_key_file_path.read_bytes),
+                password=None,
+            )
+            ca_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes))
+
+        if recreate_leaf:
+            LOGGER.debug("MQTT Bridge Broker: Creating broker KEY")
+            leaf_private_key = rsa.generate_private_key(public_exponent=65537, key_size=self._settings.key_size)
+            leaf_private_pem = leaf_private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+            async with aiofiles.open(self.mqtt_bridge_key_file_path, "wb") as f:
+                await f.write(leaf_private_pem)
+
+            LOGGER.debug("MQTT Bridge Broker: Creating broker CER")
+            subject = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "US"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, "US"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Qolsys Controller"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, "MQTT Bridge Broker"),
+                ]
+            )
+            san_items = [ipaddress.ip_address(self._settings.plugin_ip)]
+            try:
+                san_items.append(ipaddress.ip_address("127.0.0.1"))
+            except ValueError:
+                pass
+
+            cert = (
+                x509.CertificateBuilder()
+                .subject_name(subject)
+                .issuer_name(ca_cert.subject)
+                .public_key(leaf_private_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(datetime.now(timezone.utc))
+                .not_valid_after(datetime.now(timezone.utc) + timedelta(days=3650))
+                .add_extension(x509.SubjectAlternativeName([x509.IPAddress(addr) for addr in san_items]), critical=False)
+                .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+                .sign(ca_private_key, hashes.SHA256())
+            )
+            cert_pem = cert.public_bytes(encoding=serialization.Encoding.PEM)
+            async with aiofiles.open(self.mqtt_bridge_cer_file_path, "wb") as f:
+                await f.write(cert_pem)
 
         return True
 
@@ -309,6 +406,12 @@ class QolsysPKI:
                 x509.NameAttribute(NameOID.COMMON_NAME, "www.qolsys.com "),
             ]
         )
+        san_items = [ipaddress.ip_address(self._settings.plugin_ip)]
+        try:
+            san_items.append(ipaddress.ip_address("127.0.0.1"))
+        except ValueError:
+            pass
+
         cert = (
             x509.CertificateBuilder()
             .subject_name(
@@ -328,6 +431,10 @@ class QolsysPKI:
             )
             .not_valid_after(
                 datetime.now(timezone.utc) + timedelta(days=3650),  # noqa: UP017
+            )
+            .add_extension(
+                x509.SubjectAlternativeName([x509.IPAddress(addr) for addr in san_items]),
+                critical=False,
             )
             .add_extension(
                 x509.BasicConstraints(ca=False, path_length=None),

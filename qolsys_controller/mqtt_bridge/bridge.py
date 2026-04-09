@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from .broker import MqttBridgeBroker
 from .client import MqttBridgeClient
+from .http_server import MqttBridgeHttpServer
 
 if TYPE_CHECKING:
     from qolsys_controller.controller import QolsysController
@@ -15,6 +16,7 @@ class MqttBridge:
         self._controller = controller
         self._broker: MqttBridgeBroker | None = None
         self._client: MqttBridgeClient | None = None
+        self._http_server: MqttBridgeHttpServer | None = None
         self._is_running = False
 
         self._version = "1"
@@ -26,6 +28,7 @@ class MqttBridge:
         self._zone_topic = "zone"
         self._partition_topic = "partition"
         self._automation_topic = "automation"
+        self._panel_topic = "panel"
 
     async def start(self) -> bool:
         if self._is_running:
@@ -43,6 +46,14 @@ class MqttBridge:
             LOGGER.error("MQTT Bridge Broker failed to start. MQTT Bridge will not start.")
             return False
 
+        # Start HTTP bootstrap server
+        if not self._http_server:
+            self._http_server = MqttBridgeHttpServer(self._controller)
+        if not await self._http_server.start():
+            LOGGER.error("MQTT Bridge HTTP server failed to start. MQTT Bridge will not start.")
+            await self._broker.shutdown()
+            return False
+
         # Create MQTT Bridge Client if not already created
         if not self._client:
             self._client = MqttBridgeClient(self)
@@ -50,6 +61,9 @@ class MqttBridge:
         # Start MQTT Bridge Client
         if not await self._client.start():
             LOGGER.error("MQTT Bridge Client failed to connect. MQTT Bridge will not start.")
+            if self._http_server:
+                await self._http_server.shutdown()
+            await self._broker.shutdown()
             return False
 
         LOGGER.info("MQTT Bridge Running")
@@ -63,6 +77,8 @@ class MqttBridge:
             if self._client:
                 await self._client.shutdown()
         finally:
+            if self._http_server:
+                await self._http_server.shutdown()
             if self._broker:
                 await self._broker.shutdown()
 
@@ -85,6 +101,10 @@ class MqttBridge:
     @property
     def automation_topic(self) -> str:
         return f"{self.base_topic}/{self._automation_topic}"
+
+    @property
+    def panel_topic(self) -> str:
+        return f"{self.base_topic}/{self._panel_topic}"
 
     @property
     def partition_topic(self) -> str:
@@ -115,6 +135,7 @@ class MqttBridge:
         return [
             self.automation_command_topic,
             self.partition_command_topic,
+            f"{self.panel_topic}/command",
         ]
 
     @property

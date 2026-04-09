@@ -13,9 +13,10 @@ class QolsysMDNS:
         else:
             self.azc = AsyncZeroconf()
 
+        instance_name = f"NsdPairService-{ip.replace('.', '-')}-{port}._http._tcp.local."
         self.mdns_info = ServiceInfo(
             "_http._tcp.local.",
-            "NsdPairService._http._tcp.local.",
+            instance_name,
             addresses=[socket.inet_aton(ip)],
             port=port,
         )

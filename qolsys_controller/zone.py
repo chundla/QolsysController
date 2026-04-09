@@ -31,11 +31,7 @@ class QolsysZone(QolsysObservable):
         self._current_capability: str = data.get("current_capability", "")
         self._updated_date: str = data.get("updated_date", "")
 
-        try:
-            self._sensortype = ZoneSensorType(data.get("sensortype", ""))
-        except ValueError:
-            self._sensortype = ZoneSensorType.UNKNOWN
-            LOGGER.warning("Unkown ZoneSensorType: %s", data.get("sensortype", ""))
+        self._sensortype = self._infer_sensortype(data)
 
         self._id: str = data.get("_id", "")
         self._zone_type: str = data.get("zone_type", "")
@@ -112,6 +108,93 @@ class QolsysZone(QolsysObservable):
 
     def is_ac_enabled(self) -> bool:
         return self.ac_status is not None
+
+    def _infer_sensortype(self, data: dict[str, str]) -> ZoneSensorType:
+        raw_candidates = [
+            data.get("zone_type", ""),
+            data.get("zone_physical_type", ""),
+            data.get("zone_alarm_type", ""),
+            data.get("sensortype", ""),
+            data.get("sub_type", ""),
+        ]
+
+        for raw in raw_candidates:
+            sensor_type = self._normalize_sensortype(raw)
+            if sensor_type is not None:
+                return sensor_type
+
+        LOGGER.warning(
+            "Unknown zone sensor classification for Zone%s (%s): sensortype=%r zone_type=%r zone_physical_type=%r zone_alarm_type=%r sub_type=%r",
+            self._zone_id,
+            self._sensorname,
+            data.get("sensortype", ""),
+            data.get("zone_type", ""),
+            data.get("zone_physical_type", ""),
+            data.get("zone_alarm_type", ""),
+            data.get("sub_type", ""),
+        )
+        return ZoneSensorType.UNKNOWN
+
+    @staticmethod
+    def _normalize_sensortype(raw: str) -> ZoneSensorType | None:
+        value = raw.strip()
+        if value == "":
+            return None
+
+        normalized = value.upper().replace("/", "_").replace("-", "_").replace(" ", "_")
+        normalized = "_".join(part for part in normalized.split("_") if part)
+
+        alias_map: dict[str, ZoneSensorType] = {
+            "INTRUSION": ZoneSensorType.DOOR_WINDOW,
+            "ENTRYEXIT": ZoneSensorType.DOOR_WINDOW,
+            "ENTRY_EXIT": ZoneSensorType.DOOR_WINDOW,
+            "ENTRY_EXIT_NORMAL_DELAY": ZoneSensorType.DOOR_WINDOW,
+            "ENTRY_EXIT_LONG_DELAY": ZoneSensorType.DOOR_WINDOW,
+            "PERIMETER": ZoneSensorType.DOOR_WINDOW,
+            "INSTANT_PERIMETER_DW": ZoneSensorType.DOOR_WINDOW,
+            "INSTANT_INTERIOR_DOOR": ZoneSensorType.DOOR_WINDOW,
+            "AWAY_INSTANT_FOLLOWER_DELAY": ZoneSensorType.DOOR_WINDOW,
+            "FOLLOWER": ZoneSensorType.MOTION,
+            "MOTION": ZoneSensorType.MOTION,
+            "OCCUPANCY": ZoneSensorType.OCCUPANCY,
+            "OCCUPANCY_SENSOR": ZoneSensorType.OCCUPANCY,
+            "PANEL_MOTION": ZoneSensorType.PANEL_MOTION,
+            "PANEL_GLASS_BREAK": ZoneSensorType.PANEL_GLASS_BREAK,
+            "GLASS_BREAK": ZoneSensorType.GLASS_BREAK,
+            "SMOKE_DETECTOR": ZoneSensorType.SMOKE_DETECTOR,
+            "SMOKE_M": ZoneSensorType.SMOKE_M,
+            "CO_DETECTOR": ZoneSensorType.CO_DETECTOR,
+            "CARBON_MONOXIDE": ZoneSensorType.CO_DETECTOR,
+            "CO": ZoneSensorType.CO_DETECTOR,
+            "WATER": ZoneSensorType.WATER,
+            "WATER_SENSOR": ZoneSensorType.WATER,
+            "WATER_NON_REPORTING": ZoneSensorType.WATER,
+            "FLOOD": ZoneSensorType.WATER,
+            "FREEZE": ZoneSensorType.FREEZE,
+            "FREEZE_NON_REPORTING": ZoneSensorType.FREEZE,
+            "HEAT": ZoneSensorType.HEAT,
+            "HIGH_TEMPERATURE": ZoneSensorType.HEAT,
+            "DOORBELL": ZoneSensorType.DOORBELL,
+            "DOOR_WINDOW": ZoneSensorType.DOOR_WINDOW,
+            "DOOR_WINDOW_M": ZoneSensorType.DOOR_WINDOW_M,
+            "AUXILIARY_PENDANT": ZoneSensorType.AUXILIARY_PENDANT,
+            "TAKEOVER_MODULE": ZoneSensorType.TAKEOVER_MODULE,
+            "BLUETOOTH": ZoneSensorType.BLUETOOTH,
+            "KEYPAD": ZoneSensorType.KEYPAD,
+            "KEY_FOB": ZoneSensorType.KEY_FOB,
+            "KEYFOB": ZoneSensorType.KEY_FOB,
+            "TILT": ZoneSensorType.TILT,
+            "TEMPERATURE": ZoneSensorType.TEMPERATURE,
+            "PANEL_MOTION_SENSOR": ZoneSensorType.PANEL_MOTION,
+        }
+
+        if normalized in alias_map:
+            return alias_map[normalized]
+
+        try:
+            return ZoneSensorType(value)
+        except ValueError:
+            return None
 
     def update_powerg(self, data: dict[str, str]) -> None:
         short_id_update = data.get("shortID", "")
@@ -193,9 +276,6 @@ class QolsysZone(QolsysObservable):
         if "sensorstate" in data:
             self._sensorstate = data.get("sensorstate", "")
 
-        if "sensortype" in data:
-            self.sensortype = ZoneSensorType(data.get("sensortype", ""))
-
         if "zone_type" in data:
             self._zone_type = data.get("zone_type", "")
 
@@ -204,6 +284,9 @@ class QolsysZone(QolsysObservable):
 
         if "zone_alarm_type" in data:
             self._zone_alarm_type = data.get("zone_alarm_type", "")
+
+        if any(key in data for key in ("zone_type", "zone_physical_type", "zone_alarm_type", "sensortype", "sub_type")):
+            self.sensortype = self._infer_sensortype(data)
 
         if "sensortts" in data:
             self._sensortts = data.get("sensortts", "")
@@ -553,6 +636,20 @@ class QolsysZone(QolsysObservable):
         }
 
     def to_dict_event(self) -> dict[str, Any]:
+        partition_id = 0
+        if self.partition_id != "":
+            try:
+                partition_id = int(self.partition_id)
+            except ValueError:
+                LOGGER.warning("Zone%s has invalid partition_id %r, defaulting to 0", self.zone_id, self.partition_id)
+
+        group_name = "UNKNOWN"
+        if self.sensorgroup != "":
+            try:
+                group_name = ZoneSensorGroup(self.sensorgroup).name
+            except ValueError:
+                LOGGER.warning("Zone%s has invalid sensorgroup %r, defaulting to UNKNOWN", self.zone_id, self.sensorgroup)
+
         payload: dict[str, Any] = {
             "id": int(self.zone_id),
             "type": "zone",
@@ -573,8 +670,8 @@ class QolsysZone(QolsysObservable):
             "attributes": {
                 "name": self.sensorname,
                 "device_type": self.sensortype.name,
-                "partition_id": int(self.partition_id),
-                "group": ZoneSensorGroup(self.sensorgroup).name,
+                "partition_id": partition_id,
+                "group": group_name,
             },
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "version": 1,
