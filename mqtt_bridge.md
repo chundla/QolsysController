@@ -4,6 +4,16 @@ Default bridge base topic: `qolsys_panel/v1/home`
 
 If `friendly_name` is blank, the panel unique id is used instead of `home`.
 
+## Security
+
+- MQTT transport uses TLS with a local bridge CA and broker certificate created under `config/mqtt_bridge/`.
+- Export the CA certificate via `GET /mqtt-bridge/ca` on the local HTTP API (`127.0.0.1:9123` by default).
+- Anonymous MQTT access is **disabled by default**.
+- To authenticate, configure:
+  - `mqtt_bridge_username` + `mqtt_bridge_password`, and/or
+  - `mqtt_bridge_allowed_users` as a username/password map.
+- Set `mqtt_bridge_allow_anonymous: true` only for explicit local/trusted-network use cases.
+
 ## Topics
 
 ### Status Topics
