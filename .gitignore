@@ -1,6 +1,7 @@
 /.DS_Store
 /.venv
 /__pycache__
+/venv
 .pyc
 build
 dist
@@ -12,4 +13,5 @@ __pycache__
 *.csr
 *.qolsys
 .DS_Store
-
+config.json
+output.log
