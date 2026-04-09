@@ -68,14 +68,35 @@ class MqttBridgeClient:
 
             try:
                 tls_context = ssl.create_default_context()
+                tls_context.load_verify_locations(
+                    cafile=str(self._bridge._controller._pki.mqtt_bridge_ca_cer_file_path)
+                )
                 tls_context.check_hostname = False
-                tls_context.verify_mode = ssl.CERT_NONE
+                tls_context.verify_mode = ssl.CERT_REQUIRED
+
+                username: str | None = None
+                password: str | None = None
+                if not self._bridge._controller.settings.mqtt_bridge_allow_anonymous:
+                    username = self._bridge._controller.settings.mqtt_bridge_username.strip() or None
+                    password = self._bridge._controller.settings.mqtt_bridge_password or None
+
+                    if not username or not password:
+                        for (
+                            allowed_user,
+                            allowed_password,
+                        ) in self._bridge._controller.settings.mqtt_bridge_allowed_users.items():
+                            if allowed_user and allowed_password:
+                                username = allowed_user
+                                password = allowed_password
+                                break
 
                 async with aiomqtt.Client(
                     hostname=self._bridge._controller.settings.plugin_ip,
                     port=self._bridge._controller.settings._mqtt_bridge_port,
                     tls_context=tls_context,
                     identifier=self._client_id,
+                    username=username,
+                    password=password,
                 ) as client:
                     LOGGER.debug("MQTT Bridge Client: Connected")
 
