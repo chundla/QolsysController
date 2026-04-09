@@ -11,6 +11,21 @@ A Python module that emulates a virtual IQ Remote device, enabling full **local 
 - ⚠️ Uses a **custom local usercode database** — panel's internal user code verification process is not yet supported 
 - 🌐 Includes a built-in MQTT bridge/broker for panel updates and incoming commands
 
+## MQTT Bridge Quick Reference
+- Default root topic: `qolsys_panel/v1/home`
+- State topics:
+  - `.../panel/status`
+  - `.../panel/settings`
+  - `.../partition/<partition_id>`
+  - `.../zone/<zone_id>`
+  - `.../automation/<virtual_node_id>`
+- Command topics:
+  - `.../panel/command`
+  - `.../partition/command`
+  - `.../automation/command`
+- Supported panel commands: `execute_scene`, `trigger_police`, `trigger_auxilliary`, `trigger_fire`, `speak`
+- Supported automation commands: locks, lights, covers/garage doors, sirens, valves, thermostats, and fan mode / setpoint control
+
 ## Functionality Highlights
 
 | Category               | Feature                              | Status |
