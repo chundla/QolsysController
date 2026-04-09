@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 import aiofiles
 import aiofiles.os
@@ -12,6 +13,7 @@ from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from cryptography.x509.oid import NameOID
 
 from .settings import QolsysSettings
@@ -233,11 +235,14 @@ class QolsysPKI:
                 ca_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes))
                 leaf_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_cer_file_path.read_bytes))
                 if leaf_cert.issuer == ca_cert.subject:
-                    ca_cert.public_key().verify(
+                    signature_hash_algorithm = leaf_cert.signature_hash_algorithm
+                    if signature_hash_algorithm is None:
+                        raise ValueError('Missing signature hash algorithm')
+                    cast(RSAPublicKey, ca_cert.public_key()).verify(
                         leaf_cert.signature,
                         leaf_cert.tbs_certificate_bytes,
                         padding.PKCS1v15(),
-                        leaf_cert.signature_hash_algorithm,
+                        signature_hash_algorithm,
                     )
                     pair_valid = True
                 else:
@@ -298,9 +303,12 @@ class QolsysPKI:
             async with aiofiles.open(self.mqtt_bridge_ca_cer_file_path, "wb") as f:
                 await f.write(ca_cert_pem)
         else:
-            ca_private_key = serialization.load_pem_private_key(
-                await asyncio.to_thread(self.mqtt_bridge_ca_key_file_path.read_bytes),
-                password=None,
+            ca_private_key = cast(
+                RSAPrivateKey,
+                serialization.load_pem_private_key(
+                    await asyncio.to_thread(self.mqtt_bridge_ca_key_file_path.read_bytes),
+                    password=None,
+                ),
             )
             ca_cert = x509.load_pem_x509_certificate(await asyncio.to_thread(self.mqtt_bridge_ca_cer_file_path.read_bytes))
 
