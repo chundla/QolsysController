@@ -26,6 +26,15 @@ A Python module that emulates a virtual IQ Remote device, enabling full **local 
 - Supported panel commands: `execute_scene`, `trigger_police`, `trigger_auxilliary`, `trigger_fire`, `speak`
 - Supported automation commands: locks, lights, covers/garage doors, sirens, valves, thermostats, and fan mode / setpoint control
 
+## HTTP Bridge API
+The MQTT bridge also exposes a tiny local HTTP server on `127.0.0.1:9123` by default.
+
+Supported GET endpoints:
+- `/health`, returns bridge health plus `connected`, `paired`, and `ca_ready`
+- `/mqtt-bridge/ca`, returns the generated CA certificate when available
+
+This HTTP surface is used for CA bootstrap and health checks, not for panel command traffic.
+
 ## Functionality Highlights
 
 | Category               | Feature                              | Status |
