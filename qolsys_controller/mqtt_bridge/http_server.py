@@ -14,6 +14,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MqttBridgeHttpServer:
+    _REQUEST_READ_TIMEOUT_SECONDS = 2
+
     def __init__(self, controller: 'QolsysController') -> None:
         self._controller = controller
         self._server: asyncio.AbstractServer | None = None
@@ -39,7 +41,11 @@ class MqttBridgeHttpServer:
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            raw = await reader.readuntil(b'\r\n\r\n')
+            raw = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), timeout=self._REQUEST_READ_TIMEOUT_SECONDS)
+        except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+            writer.close()
+            await writer.wait_closed()
+            return
         except Exception:
             writer.close()
             await writer.wait_closed()
