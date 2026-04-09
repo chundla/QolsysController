@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from qolsys_controller.controller import QolsysController
 
