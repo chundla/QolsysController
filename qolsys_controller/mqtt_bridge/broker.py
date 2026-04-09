@@ -20,8 +20,11 @@ if TYPE_CHECKING:
 
 
 class AuthPlugin(BaseAuthPlugin):  # type: ignore[misc]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.allowed_users: dict[str, str] = dict(getattr(self.config, "allowed_users", {}))
+
     def set_config(self, config: dict[str, Any]) -> None:
-        super().set_config(config)
         raw_allowed_users = config.get("allowed_users", {})
         if not isinstance(raw_allowed_users, dict):
             self.allowed_users = {}
@@ -33,11 +36,17 @@ class AuthPlugin(BaseAuthPlugin):  # type: ignore[misc]
             if isinstance(username, str) and isinstance(password, str) and username and password
         }
 
-    async def authenticate(self, username: str | None, password: str | None, **kwargs: Any) -> bool:
+        if hasattr(self, "config") and hasattr(self.config, "allowed_users"):
+            self.config.allowed_users = dict(self.allowed_users)
+
+    async def authenticate(self, *, session: Any) -> bool | None:
+        username = getattr(session, "username", None)
+        password = getattr(session, "password", None)
         if not username or not password:
             return False
 
-        expected_password = self.allowed_users.get(username)
+        allowed_users = self.allowed_users or dict(getattr(self.config, "allowed_users", {}))
+        expected_password = allowed_users.get(username)
         if expected_password is None:
             return False
 

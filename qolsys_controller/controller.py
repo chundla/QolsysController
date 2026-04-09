@@ -175,11 +175,13 @@ class QolsysController:
                 return
 
     async def start_operation(self) -> None:
-        # Connect to Qolsys Panel MQTT and start listening for messages
-        await self._task_manager.run(self.mqtt_connect_task(reconnect=True, run_forever=True), self._mqtt_task_connect_label)
-
-        # Start MQTT Bridge Broker
+        LOGGER.info("Qolsys Controller: entering start_mqtt_bridge")
+        # Start MQTT Bridge Broker first so local bootstrap/health listeners come up immediately
         await self.start_mqtt_bridge()
+        LOGGER.info("Qolsys Controller: finished start_mqtt_bridge")
+
+        # Connect to Qolsys Panel MQTT and start listening for messages
+        self._task_manager.run(self.mqtt_connect_task(reconnect=True, run_forever=True), self._mqtt_task_connect_label)
 
         LOGGER.info("Qolsys Controller Ready for operation")
 
